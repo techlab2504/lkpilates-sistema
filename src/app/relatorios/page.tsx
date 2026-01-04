@@ -42,28 +42,38 @@ export default function Relatorios() {
 
   /* ---------- CARREGAR ALUNOS ---------- */
   async function carregarAlunos() {
-    const { data, error } = await supabase
-      .from('alunos')
-      .select(`
-        id,
-        nome,
-        plano,
-        total_aulas,
-        aulas_restantes,
-        valor_plano,
-        pagou_em,
-        aulas (
-          id,
-          data,
-          status
-        )
-      `)
-      .eq('ativo', true)
-      .order('nome')
+   const { data, error } = await supabase
+  .from('alunos')
+  .select(`
+    id,
+    nome,
+    plano,
+    total_aulas,
+    aulas_restantes,
+    valor_plano,
+    pagou_em,
+    aulas: aulas (
+      id,
+      data,
+      status
+    )
+  `)
+  .eq('ativo', true)
+  .order('nome')
 
-    if (!error && data) {
-      setAlunos(data)
-    }
+
+
+   if (!error && data) {
+  const alunosOrdenados = data.map(aluno => ({
+    ...aluno,
+    aulas: [...(aluno.aulas || [])].sort(
+      (a, b) => new Date(a.data).getTime() - new Date(b.data).getTime()
+    )
+  }))
+
+  setAlunos(alunosOrdenados)
+}
+
   }
 
   useEffect(() => {
@@ -206,29 +216,34 @@ async function desfazerReinicio(aluno: Aluno) {
 async function editarDataAula(aula: Aula) {
   const novaData = prompt(
     'Digite a nova data (AAAA-MM-DD):',
-    aula.data
+    aula.data.slice(0, 10)
   )
 
   if (!novaData) return
 
-  // valida formato básico
   if (!/^\d{4}-\d{2}-\d{2}$/.test(novaData)) {
     alert('Formato inválido. Use AAAA-MM-DD')
     return
   }
 
+  // garante formato ISO completo (evita bug de timestamp)
+  const dataISO = `${novaData}T00:00:00`
+
   const { error } = await supabase
     .from('aulas')
-    .update({ data: novaData })
+    .update({ data: dataISO })
     .eq('id', aula.id)
 
   if (error) {
-    alert('Erro ao atualizar data')
+    console.error(error)
+    alert('Erro ao atualizar a data')
     return
   }
 
-  carregarAlunos()
+  // força reload real dos dados
+  await carregarAlunos()
 }
+
 
 
   /* ---------- FILTRO ---------- */
@@ -320,4 +335,4 @@ async function editarDataAula(aula: Aula) {
     </div>
   )
 }
-
+  
