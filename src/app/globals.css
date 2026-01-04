@@ -413,3 +413,12 @@ body {
   text-align: center;
   opacity: 0.6;
 }
+.btn-danger {
+  background: #c62828;
+  color: white;
+  border: none;
+}
+
+.btn-danger:hover {
+  background: #a61f1f;
+}

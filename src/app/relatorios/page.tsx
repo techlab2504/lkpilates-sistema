@@ -1,5 +1,3 @@
-
-
 'use client'
 
 import { useEffect, useState } from 'react'
@@ -39,41 +37,46 @@ export default function Relatorios() {
 
   const [alunos, setAlunos] = useState<Aluno[]>([])
   const [busca, setBusca] = useState('')
+  const [datasVisiveis, setDatasVisiveis] = useState<Record<string, boolean>>({})
+
+  function toggleDatas(alunoId: string) {
+    setDatasVisiveis(prev => ({
+      ...prev,
+      [alunoId]: !prev[alunoId]
+    }))
+  }
 
   /* ---------- CARREGAR ALUNOS ---------- */
   async function carregarAlunos() {
-   const { data, error } = await supabase
-  .from('alunos')
-  .select(`
-    id,
-    nome,
-    plano,
-    total_aulas,
-    aulas_restantes,
-    valor_plano,
-    pagou_em,
-    aulas: aulas (
-      id,
-      data,
-      status
-    )
-  `)
-  .eq('ativo', true)
-  .order('nome')
+    const { data, error } = await supabase
+      .from('alunos')
+      .select(`
+        id,
+        nome,
+        plano,
+        total_aulas,
+        aulas_restantes,
+        valor_plano,
+        pagou_em,
+        aulas: aulas (
+          id,
+          data,
+          status
+        )
+      `)
+      .eq('ativo', true)
+      .order('nome')
 
+    if (!error && data) {
+      const alunosOrdenados = data.map(aluno => ({
+        ...aluno,
+        aulas: [...(aluno.aulas || [])].sort(
+          (a, b) => new Date(a.data).getTime() - new Date(b.data).getTime()
+        )
+      }))
 
-
-   if (!error && data) {
-  const alunosOrdenados = data.map(aluno => ({
-    ...aluno,
-    aulas: [...(aluno.aulas || [])].sort(
-      (a, b) => new Date(a.data).getTime() - new Date(b.data).getTime()
-    )
-  }))
-
-  setAlunos(alunosOrdenados)
-}
-
+      setAlunos(alunosOrdenados)
+    }
   }
 
   useEffect(() => {
@@ -102,9 +105,7 @@ export default function Relatorios() {
 
     await supabase
       .from('alunos')
-      .update({
-        aulas_restantes: aluno.aulas_restantes - 1
-      })
+      .update({ aulas_restantes: aluno.aulas_restantes - 1 })
       .eq('id', aluno.id)
 
     carregarAlunos()
@@ -120,18 +121,13 @@ export default function Relatorios() {
       .limit(1)
       .single()
 
-    if (!ultima) {
-      alert('Nenhuma aula para desfazer')
-      return
-    }
+    if (!ultima) return alert('Nenhuma aula para desfazer')
 
     await supabase.from('aulas').delete().eq('id', ultima.id)
 
     await supabase
       .from('alunos')
-      .update({
-        aulas_restantes: aluno.aulas_restantes + 1
-      })
+      .update({ aulas_restantes: aluno.aulas_restantes + 1 })
       .eq('id', aluno.id)
 
     carregarAlunos()
@@ -147,104 +143,88 @@ export default function Relatorios() {
 
     await supabase
       .from('alunos')
-      .update({
-        aulas_restantes: aluno.total_aulas
-      })
+      .update({ aulas_restantes: aluno.total_aulas })
       .eq('id', aluno.id)
 
     carregarAlunos()
   }
 
-  /* ---------- EDITAR DADOS DO ALUNO ---------- */
-  async function editarAluno(aluno: Aluno) {
-    const novoPlano = prompt('Plano:', aluno.plano)
-    const novoValor = prompt('Valor do plano:', String(aluno.valor_plano))
-    const novoTotal = prompt('Total de aulas:', String(aluno.total_aulas))
-    const novoPagouEm = prompt(
-      'Informação de pagamento (ex: 3x em julho, Pix dia 05):',
-      aluno.pagou_em || ''
-    )
+  /* ---------- DESFAZER REINÍCIO ---------- */
+  async function desfazerReinicio(aluno: Aluno) {
+    const { data } = await supabase
+      .from('reinicios_plano')
+      .select('*')
+      .eq('aluno_id', aluno.id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single()
 
-    if (!novoPlano || !novoValor || !novoTotal) return
-
-    const diferenca = Number(novoTotal) - aluno.total_aulas
+    if (!data) return alert('Nenhum reinício para desfazer.')
 
     await supabase
       .from('alunos')
       .update({
-        plano: novoPlano,
-        valor_plano: Number(novoValor),
-        total_aulas: Number(novoTotal),
-        aulas_restantes: aluno.aulas_restantes + diferenca,
-        pagou_em: novoPagouEm || null
+        total_aulas: data.total_aulas_anterior,
+        aulas_restantes: data.aulas_restantes_anterior
       })
       .eq('id', aluno.id)
 
+    await supabase.from('reinicios_plano').delete().eq('id', data.id)
+
     carregarAlunos()
   }
-  /* ---------- DESFAZER REINÍCIO ---------- */
-async function desfazerReinicio(aluno: Aluno) {
-  const { data, error } = await supabase
-    .from('reinicios_plano')
-    .select('*')
-    .eq('aluno_id', aluno.id)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .single()
 
-  if (error || !data) {
-    alert('Nenhum reinício para desfazer.')
-    return
+  /* ---------- EDITAR DATA ---------- */
+  async function editarDataAula(aula: Aula) {
+    const novaData = prompt(
+      'Digite a nova data (AAAA-MM-DD):',
+      aula.data.slice(0, 10)
+    )
+
+    if (!novaData) return
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(novaData)) {
+      alert('Formato inválido. Use AAAA-MM-DD')
+      return
+    }
+
+    await supabase
+      .from('aulas')
+      .update({ data: `${novaData}T00:00:00` })
+      .eq('id', aula.id)
+
+    carregarAlunos()
   }
+/* ---------- APAGAR FICHA DO ALUNO ---------- */
+async function apagarFicha(aluno: Aluno) {
+  const confirmacao = confirm(
+    `Tem certeza que deseja apagar a ficha de ${aluno.nome}?\n\nTodos os registros de aulas serão removidos.`
+  )
 
+  if (!confirmacao) return
+
+  // Apaga aulas do aluno
   await supabase
-    .from('alunos')
-    .update({
-      total_aulas: data.total_aulas_anterior,
-      aulas_restantes: data.aulas_restantes_anterior
-    })
-    .eq('id', aluno.id)
+    .from('aulas')
+    .delete()
+    .eq('aluno_id', aluno.id)
 
+  // Apaga reinícios de plano
   await supabase
     .from('reinicios_plano')
     .delete()
-    .eq('id', data.id)
+    .eq('aluno_id', aluno.id)
+
+  // Desativa aluno (não apaga do banco)
+  await supabase
+    .from('alunos')
+    .update({ ativo: false })
+    .eq('id', aluno.id)
+
+  alert('Ficha apagada com sucesso.')
 
   carregarAlunos()
 }
-/* ---------- EDITAR DATA DA AULA ---------- */
-async function editarDataAula(aula: Aula) {
-  const novaData = prompt(
-    'Digite a nova data (AAAA-MM-DD):',
-    aula.data.slice(0, 10)
-  )
-
-  if (!novaData) return
-
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(novaData)) {
-    alert('Formato inválido. Use AAAA-MM-DD')
-    return
-  }
-
-  // garante formato ISO completo (evita bug de timestamp)
-  const dataISO = `${novaData}T00:00:00`
-
-  const { error } = await supabase
-    .from('aulas')
-    .update({ data: dataISO })
-    .eq('id', aula.id)
-
-  if (error) {
-    console.error(error)
-    alert('Erro ao atualizar a data')
-    return
-  }
-
-  // força reload real dos dados
-  await carregarAlunos()
-}
-
-
 
   /* ---------- FILTRO ---------- */
   const filtrados = alunos.filter(a =>
@@ -257,7 +237,6 @@ async function editarDataAula(aula: Aula) {
     <div className="container">
       <div className="topo">
         <img src="/logo-lk-pilates.png" className="logo" />
-        
       </div>
 
       <h1>Relatório de Alunos</h1>
@@ -271,22 +250,29 @@ async function editarDataAula(aula: Aula) {
 
       {filtrados.map(aluno => (
         <div key={aluno.id} className="card">
-          {/* DATAS */}
-          <div className="datas-container">
-            {aluno.aulas.map(aula => (
-              <span
-              
-  key={aula.id}
-  className={`data-badge ${aula.status}`}
-  title="Clique para editar a data"
-  onClick={() => editarDataAula(aula)}
-  style={{ cursor: 'pointer' }}
->
-  {formatarDataBR(aula.data)}
-</span>
 
-            ))}
-          </div>
+          <button
+            className="btn btn-sec"
+            style={{ marginBottom: 8 }}
+            onClick={() => toggleDatas(aluno.id)}
+          >
+            {datasVisiveis[aluno.id] ? 'Esconder datas' : 'Mostrar datas'}
+          </button>
+
+          {datasVisiveis[aluno.id] && (
+            <div className="datas-container" style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {aluno.aulas.map(aula => (
+                <span
+                  key={aula.id}
+                  className={`data-badge ${aula.status}`}
+                  onClick={() => editarDataAula(aula)}
+                  style={{ cursor: 'pointer', whiteSpace: 'nowrap' }}
+                >
+                  {formatarDataBR(aula.data)}
+                </span>
+              ))}
+            </div>
+          )}
 
           <strong>{aluno.nome}</strong>
 
@@ -296,43 +282,21 @@ async function editarDataAula(aula: Aula) {
           <p><b>Pagamento:</b> {aluno.pagou_em || '—'}</p>
 
           <div className="botoes">
-            <button className="btn btn-veio" onClick={() => registrarAula(aluno, 'veio')}>
-              Veio
-            </button>
-
-            <button className="btn btn-faltou" onClick={() => registrarAula(aluno, 'faltou')}>
-              Faltou
-            </button>
-
-            <button className="btn btn-sec" onClick={() => desfazerUltimaAula(aluno)}>
-              Desfazer última aula
-            </button>
-
-            <button className="btn btn-sec" onClick={() => reiniciarPlano(aluno)}>
-              Reiniciar plano
-            </button>
-            <button
-  className="btn btn-sec"
-  onClick={() => router.push(`/relatorios/${aluno.id}`)}
+            <button className="btn btn-veio" onClick={() => registrarAula(aluno, 'veio')}>Veio</button>
+            <button className="btn btn-faltou" onClick={() => registrarAula(aluno, 'faltou')}>Faltou</button>
+            <button className="btn btn-sec" onClick={() => desfazerUltimaAula(aluno)}>Desfazer última</button>
+            <button className="btn btn-sec" onClick={() => reiniciarPlano(aluno)}>Reiniciar plano</button>
+            <button className="btn btn-sec" onClick={() => router.push(`/relatorios/${aluno.id}`)}>Ver relatório completo</button>
+            <button className="btn btn-sec" onClick={() => desfazerReinicio(aluno)}>Desfazer reinício</button>
+          <button
+  className="btn btn-danger"
+  onClick={() => apagarFicha(aluno)}
 >
-  Ver relatório completo
+  Apagar ficha
 </button>
-
-            <button
-  className="btn btn-sec"
-  onClick={() => desfazerReinicio(aluno)}
->
-  Desfazer reinício
-</button>
-
-
-            <button className="btn btn-sec" onClick={() => editarAluno(aluno)}>
-              Editar dados
-            </button>
-          </div>
+</div>
         </div>
       ))}
     </div>
   )
 }
-  
