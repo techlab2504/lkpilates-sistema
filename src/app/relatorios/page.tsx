@@ -174,6 +174,34 @@ export default function Relatorios() {
     carregarAlunos()
   }
 
+  /* ---------- EDITAR DADOS DO ALUNO ---------- */
+  async function editarAluno(aluno: Aluno) {
+    const novoPlano = prompt('Plano:', aluno.plano)
+    const novoValor = prompt('Valor do plano:', String(aluno.valor_plano))
+    const novoTotal = prompt('Total de aulas:', String(aluno.total_aulas))
+    const novoPagouEm = prompt(
+      'Pagamento (ex: 2x em julho, Pix dia 05):',
+      aluno.pagou_em || ''
+    )
+
+    if (!novoPlano || !novoValor || !novoTotal) return
+
+    const diferenca = Number(novoTotal) - aluno.total_aulas
+
+    await supabase
+      .from('alunos')
+      .update({
+        plano: novoPlano,
+        valor_plano: Number(novoValor),
+        total_aulas: Number(novoTotal),
+        aulas_restantes: aluno.aulas_restantes + diferenca,
+        pagou_em: novoPagouEm || null
+      })
+      .eq('id', aluno.id)
+
+    carregarAlunos()
+  }
+
   /* ---------- EDITAR DATA ---------- */
   async function editarDataAula(aula: Aula) {
     const novaData = prompt(
@@ -195,36 +223,23 @@ export default function Relatorios() {
 
     carregarAlunos()
   }
-/* ---------- APAGAR FICHA DO ALUNO ---------- */
-async function apagarFicha(aluno: Aluno) {
-  const confirmacao = confirm(
-    `Tem certeza que deseja apagar a ficha de ${aluno.nome}?\n\nTodos os registros de aulas serão removidos.`
-  )
 
-  if (!confirmacao) return
+  /* ---------- APAGAR FICHA ---------- */
+  async function apagarFicha(aluno: Aluno) {
+    const confirmacao = confirm(
+      `Tem certeza que deseja apagar a ficha de ${aluno.nome}?\n\nTodos os registros de aulas serão removidos.`
+    )
 
-  // Apaga aulas do aluno
-  await supabase
-    .from('aulas')
-    .delete()
-    .eq('aluno_id', aluno.id)
+    if (!confirmacao) return
 
-  // Apaga reinícios de plano
-  await supabase
-    .from('reinicios_plano')
-    .delete()
-    .eq('aluno_id', aluno.id)
+    await supabase.from('aulas').delete().eq('aluno_id', aluno.id)
+    await supabase.from('reinicios_plano').delete().eq('aluno_id', aluno.id)
 
-  // Desativa aluno (não apaga do banco)
-  await supabase
-    .from('alunos')
-    .update({ ativo: false })
-    .eq('id', aluno.id)
+    await supabase.from('alunos').update({ ativo: false }).eq('id', aluno.id)
 
-  alert('Ficha apagada com sucesso.')
-
-  carregarAlunos()
-}
+    alert('Ficha apagada com sucesso.')
+    carregarAlunos()
+  }
 
   /* ---------- FILTRO ---------- */
   const filtrados = alunos.filter(a =>
@@ -286,15 +301,12 @@ async function apagarFicha(aluno: Aluno) {
             <button className="btn btn-faltou" onClick={() => registrarAula(aluno, 'faltou')}>Faltou</button>
             <button className="btn btn-sec" onClick={() => desfazerUltimaAula(aluno)}>Desfazer última</button>
             <button className="btn btn-sec" onClick={() => reiniciarPlano(aluno)}>Reiniciar plano</button>
+            <button className="btn btn-sec" onClick={() => editarAluno(aluno)}>Editar dados</button>
             <button className="btn btn-sec" onClick={() => router.push(`/relatorios/${aluno.id}`)}>Ver relatório completo</button>
             <button className="btn btn-sec" onClick={() => desfazerReinicio(aluno)}>Desfazer reinício</button>
-          <button
-  className="btn btn-danger"
-  onClick={() => apagarFicha(aluno)}
->
-  Apagar ficha
-</button>
-</div>
+            <button className="btn btn-danger" onClick={() => apagarFicha(aluno)}>Apagar ficha</button>
+          </div>
+
         </div>
       ))}
     </div>

@@ -6,9 +6,11 @@ import { supabase } from '@/lib/supabase'
 export default function Alunos() {
   const [nome, setNome] = useState('')
   const [plano, setPlano] = useState('')
-  const [total, setTotal] = useState(0)
-  const [valor, setValor] = useState(0)
+  const [total, setTotal] = useState<number>(0)
+  const [valor, setValor] = useState<number>(0)
   const [pagouEm, setPagouEm] = useState('')
+
+  /* ================== SALVAR ================== */
 
   async function salvar() {
     if (!nome || !plano || total <= 0) {
@@ -16,15 +18,17 @@ export default function Alunos() {
       return
     }
 
-    const { error } = await supabase.from('alunos').insert({
-      nome,
-      plano,
-      valor_plano: valor,
-      total_aulas: total,
-      aulas_restantes: total,
-      pagou_em: total,
-      ativo: true
-    })
+    const { error } = await supabase
+      .from('alunos')
+      .insert({
+        nome,
+        plano,
+        total_aulas: total,
+        aulas_restantes: total,
+        valor_plano: valor,
+        pagou_em: pagouEm || null,
+        ativo: true
+      })
 
     if (error) {
       console.error(error)
@@ -41,6 +45,8 @@ export default function Alunos() {
     setValor(0)
     setPagouEm('')
   }
+
+  /* ================== JSX ================== */
 
   return (
     <div className="form-container">
@@ -75,7 +81,7 @@ export default function Alunos() {
           type="number"
           placeholder="Total de aulas"
           value={total || ''}
-          onChange={e => setTotal(+e.target.value)}
+          onChange={e => setTotal(Number(e.target.value))}
         />
 
         <input
@@ -83,21 +89,22 @@ export default function Alunos() {
           type="number"
           placeholder="Valor do plano (R$)"
           value={valor || ''}
-          onChange={e => setValor(+e.target.value)}
+          onChange={e => setValor(Number(e.target.value))}
         />
 
-        {/* NOVO CAMPO */}
-        <label className="label">
-          Pagou em:
-        </label>
+        <label className="label">Pagou em:</label>
         <input
           className="input"
-          type="text"
+          placeholder="Ex: 2x em julho, Pix dia 05"
           value={pagouEm}
           onChange={e => setPagouEm(e.target.value)}
         />
 
-        <button className="btn-primary" onClick={salvar}>
+        <button
+          className="btn-primary"
+          onClick={salvar}
+          style={{ marginTop: 20 }}
+        >
           Salvar aluno
         </button>
       </div>

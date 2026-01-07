@@ -35,6 +35,8 @@ export default function RootLayout({
           <Link href="/aulas" className="menu-btn">Aulas</Link>
           <Link href="/alunos" className="menu-btn">Cadastros</Link>
           <Link href="/relatorios" className="menu-btn">Relatórios</Link>
+      
+  
         </nav>
 
         {/* CONTEÚDO */}
