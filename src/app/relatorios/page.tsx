@@ -59,16 +59,19 @@ export default function Relatorios() {
       .eq('ativo', true)
       .order('nome')
 
-    if (!error && data) {
-      const alunosOrdenados = data.map(aluno => ({
-        ...aluno,
-        aulas: [...(aluno.aulas || [])].sort(
-          (a, b) => new Date(a.data).getTime() - new Date(b.data).getTime()
-        )
-      }))
-
-      setAlunos(alunosOrdenados)
+    if (error) {
+      console.error(error)
+      return
     }
+
+    const alunosOrdenados = (data || []).map(aluno => ({
+      ...aluno,
+      aulas: [...(aluno.aulas || [])].sort(
+        (a, b) => new Date(a.data).getTime() - new Date(b.data).getTime()
+      )
+    }))
+
+    setAlunos(alunosOrdenados)
   }
 
   useEffect(() => {
@@ -77,115 +80,74 @@ export default function Relatorios() {
 
   /* ---------- REGISTRAR AULA ---------- */
   async function registrarAula(aluno: Aluno, status: 'veio' | 'faltou') {
-  if (aluno.aulas_restantes <= 0) {
-    alert('Este plano já chegou ao limite de aulas.')
-    return
-  }
+    if (aluno.aulas_restantes <= 0) {
+      alert('Este plano já chegou ao limite de aulas.')
+      return
+    }
 
-  const hoje = new Date()
-  const dataLocal = new Date(
-    hoje.getTime() - hoje.getTimezoneOffset() * 60000
-  )
-    .toISOString()
-    .slice(0, 10)
+    const hoje = new Date()
+    const dataLocal = new Date(
+      hoje.getTime() - hoje.getTimezoneOffset() * 60000
+    )
+      .toISOString()
+      .slice(0, 10)
 
-  // 1️⃣ cria aula no banco
-  const { data: novaAula, error } = await supabase
-    .from('aulas')
-    .insert({
+    await supabase.from('aulas').insert({
       aluno_id: aluno.id,
       data: dataLocal,
       status
     })
-    .select()
-    .single()
 
-  if (error || !novaAula) {
-    alert('Erro ao registrar aula')
-    return
+    await supabase
+      .from('alunos')
+      .update({ aulas_restantes: aluno.aulas_restantes - 1 })
+      .eq('id', aluno.id)
+
+    await carregarAlunos()
   }
-
-  // 2️⃣ atualiza contador no banco
-  await supabase
-    .from('alunos')
-    .update({ aulas_restantes: aluno.aulas_restantes - 1 })
-    .eq('id', aluno.id)
-
-  // 3️⃣ ATUALIZA SOMENTE O ESTADO LOCAL (SEM RECARREGAR TUDO)
-  setAlunos(prev =>
-    prev.map(a =>
-      a.id === aluno.id
-        ? {
-            ...a,
-            aulas: [...a.aulas, novaAula],
-            aulas_restantes: a.aulas_restantes - 1
-          }
-        : a
-    )
-  )
-}
-
 
   /* ---------- DESFAZER ÚLTIMA AULA ---------- */
- async function desfazerUltimaAula(aluno: Aluno) {
-  if (!aluno.aulas.length) {
-    alert('Nenhuma aula para desfazer')
-    return
+  async function desfazerUltimaAula(aluno: Aluno) {
+    const { data: ultimaAula } = await supabase
+      .from('aulas')
+      .select('id')
+      .eq('aluno_id', aluno.id)
+      .order('data', { ascending: false }) // ✅ CORRETO
+      .limit(1)
+      .single()
+
+    if (!ultimaAula) {
+      alert('Nenhuma aula para desfazer')
+      return
+    }
+
+    await supabase.from('aulas').delete().eq('id', ultimaAula.id)
+
+    await supabase
+      .from('alunos')
+      .update({ aulas_restantes: aluno.aulas_restantes + 1 })
+      .eq('id', aluno.id)
+
+    await carregarAlunos()
   }
 
-  // pega a última aula REAL pelo array já ordenado
-  const ultimaAula = aluno.aulas[aluno.aulas.length - 1]
-
-  // apaga do banco
-  await supabase
-    .from('aulas')
-    .delete()
-    .eq('id', ultimaAula.id)
-
-  // atualiza contador
-  await supabase
-    .from('alunos')
-    .update({ aulas_restantes: aluno.aulas_restantes + 1 })
-    .eq('id', aluno.id)
-
-  // atualiza SOMENTE o estado local (sem reload geral)
-  setAlunos(prev =>
-    prev.map(a =>
-      a.id === aluno.id
-        ? {
-            ...a,
-            aulas: a.aulas.slice(0, -1),
-            aulas_restantes: a.aulas_restantes + 1
-          }
-        : a
-    )
-  )
-}
-
-
-  /* ---------- REINICIAR PLANO (CORRIGIDO) ---------- */
+  /* ---------- REINICIAR PLANO (DEFINITIVO) ---------- */
   async function reiniciarPlano(aluno: Aluno) {
-  const confirmar = confirm(
-    `Reiniciar o plano de ${aluno.nome}?\nIsso NÃO apaga o histórico.`
-  )
-
-  if (!confirmar) return
-
-  await supabase
-    .from('alunos')
-    .update({ aulas_restantes: aluno.total_aulas })
-    .eq('id', aluno.id)
-
-  // atualiza estado local sem mexer nas datas
-  setAlunos(prev =>
-    prev.map(a =>
-      a.id === aluno.id
-        ? { ...a, aulas_restantes: a.total_aulas }
-        : a
+    const confirmar = confirm(
+      `Deseja reiniciar o plano de ${aluno.nome}?\n\nApenas o número de aulas será reiniciado.`
     )
-  )
-}
 
+    if (!confirmar) return
+
+    await supabase
+      .from('alunos')
+      .update({
+        aulas_restantes: aluno.total_aulas
+      })
+      .eq('id', aluno.id)
+
+    await carregarAlunos()
+  }
 
   /* ---------- EDITAR / APAGAR DATA ---------- */
   async function editarDataAula(aula: Aula, aluno: Aluno) {
@@ -195,7 +157,6 @@ export default function Relatorios() {
 
     if (!acao) return
 
-    /* ===== APAGAR ===== */
     if (acao === '2') {
       const confirmar = confirm('Deseja realmente apagar esta data?')
       if (!confirmar) return
@@ -207,22 +168,10 @@ export default function Relatorios() {
         .update({ aulas_restantes: aluno.aulas_restantes + 1 })
         .eq('id', aluno.id)
 
-      setAlunos(prev =>
-        prev.map(a =>
-          a.id === aluno.id
-            ? {
-                ...a,
-                aulas: a.aulas.filter(x => x.id !== aula.id),
-                aulas_restantes: a.aulas_restantes + 1
-              }
-            : a
-        )
-      )
-
+      await carregarAlunos()
       return
     }
 
-    /* ===== EDITAR ===== */
     if (acao === '1') {
       const novaData = prompt(
         'Digite a nova data (AAAA-MM-DD):',
@@ -232,7 +181,7 @@ export default function Relatorios() {
       if (!novaData) return
 
       if (!/^\d{4}-\d{2}-\d{2}$/.test(novaData)) {
-        alert('Formato inválido. Use AAAA-MM-DD')
+        alert('Formato inválido.')
         return
       }
 
@@ -241,7 +190,7 @@ export default function Relatorios() {
         .update({ data: `${novaData}T00:00:00` })
         .eq('id', aula.id)
 
-      carregarAlunos()
+      await carregarAlunos()
     }
   }
 
@@ -251,7 +200,7 @@ export default function Relatorios() {
     const novoValor = prompt('Valor do plano:', String(aluno.valor_plano))
     const novoTotal = prompt('Total de aulas:', String(aluno.total_aulas))
     const novoPagouEm = prompt(
-      'Pagamento (ex: 2x em julho, Pix dia 05):',
+      'Pagamento:',
       aluno.pagou_em || ''
     )
 
@@ -270,23 +219,21 @@ export default function Relatorios() {
       })
       .eq('id', aluno.id)
 
-    carregarAlunos()
+    await carregarAlunos()
   }
 
   /* ---------- APAGAR FICHA ---------- */
   async function apagarFicha(aluno: Aluno) {
     const confirmacao = confirm(
-      `Tem certeza que deseja apagar a ficha de ${aluno.nome}?\nTodos os registros serão removidos.`
+      `Tem certeza que deseja apagar a ficha de ${aluno.nome}?`
     )
 
     if (!confirmacao) return
 
     await supabase.from('aulas').delete().eq('aluno_id', aluno.id)
-    await supabase.from('reinicios_plano').delete().eq('aluno_id', aluno.id)
     await supabase.from('alunos').update({ ativo: false }).eq('id', aluno.id)
 
-    alert('Ficha apagada com sucesso.')
-    carregarAlunos()
+    await carregarAlunos()
   }
 
   /* ---------- FILTRO ---------- */
@@ -314,13 +261,12 @@ export default function Relatorios() {
       {filtrados.map(aluno => (
         <div key={aluno.id} className="card">
 
-          <div className="datas-container" style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          <div className="datas-container">
             {aluno.aulas.map(aula => (
               <span
                 key={aula.id}
                 className={`data-badge ${aula.status}`}
                 onClick={() => editarDataAula(aula, aluno)}
-                style={{ cursor: 'pointer' }}
               >
                 {formatarDataBR(aula.data)}
               </span>
@@ -335,14 +281,55 @@ export default function Relatorios() {
           <p><b>Pagamento:</b> {aluno.pagou_em || '—'}</p>
 
           <div className="botoes">
-            <button className="btn btn-veio" onClick={() => registrarAula(aluno, 'veio')}>Veio</button>
-            <button className="btn btn-faltou" onClick={() => registrarAula(aluno, 'faltou')}>Faltou</button>
-            <button className="btn btn-sec" onClick={() => desfazerUltimaAula(aluno)}>Desfazer última</button>
-            <button className="btn btn-sec" onClick={() => reiniciarPlano(aluno)}>Reiniciar plano</button>
-            <button className="btn btn-sec" onClick={() => editarAluno(aluno)}>Editar dados</button>
-            <button className="btn btn-sec" onClick={() => router.push(`/relatorios/${aluno.id}`)}>Ver relatório completo</button>
-            <button className="btn btn-danger" onClick={() => apagarFicha(aluno)}>Apagar ficha</button>
-          </div>
+  <button
+    className="btn btn-veio"
+    onClick={() => registrarAula(aluno, 'veio')}
+  >
+    Veio
+  </button>
+
+  <button
+    className="btn btn-faltou"
+    onClick={() => registrarAula(aluno, 'faltou')}
+  >
+    Faltou
+  </button>
+
+  <button
+    className="btn btn-sec"
+    onClick={() => desfazerUltimaAula(aluno)}
+  >
+    Desfazer última
+  </button>
+
+  <button
+    className="btn btn-sec"
+    onClick={() => reiniciarPlano(aluno)}
+  >
+    Reiniciar plano
+  </button>
+
+  <button
+    className="btn btn-sec"
+    onClick={() => editarAluno(aluno)}
+  >
+    Editar dados
+  </button>
+
+  <button
+    className="btn btn-sec"
+    onClick={() => router.push(`/relatorios/${aluno.id}`)}
+  >
+    Ver relatório completo
+  </button>
+
+  <button
+    className="btn btn-danger"
+    onClick={() => apagarFicha(aluno)}
+  >
+    Apagar ficha
+  </button>
+</div>
 
         </div>
       ))}
