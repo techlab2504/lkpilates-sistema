@@ -220,7 +220,42 @@ export default function Relatorios() {
       .eq('id', aluno.id)
 
     await carregarAlunos()
+  } 
+  /* ---------- CORRIGIR AULAS RESTANTES ---------- */
+  async function corrigirAulas(aluno: Aluno) {
+  const novoValor = prompt(
+    `Corrigir aulas restantes de ${aluno.nome}\n\nTotal: ${aluno.total_aulas}\nAtual: ${aluno.aulas_restantes}`,
+    String(aluno.aulas_restantes)
+  )
+
+  if (novoValor === null) return
+
+  const numero = Number(novoValor)
+
+  if (
+    isNaN(numero) ||
+    numero < 0 ||
+    numero > aluno.total_aulas
+  ) {
+    alert('Número inválido')
+    return
   }
+
+  const { error } = await supabase
+    .from('alunos')
+    .update({
+      aulas_restantes: numero
+    })
+    .eq('id', aluno.id)
+
+  if (error) {
+    alert('Erro ao corrigir aulas')
+    return
+  }
+
+  await carregarAlunos()
+}
+
 
   /* ---------- APAGAR FICHA ---------- */
   async function apagarFicha(aluno: Aluno) {
@@ -322,6 +357,13 @@ export default function Relatorios() {
   >
     Ver relatório completo
   </button>
+  <button
+  className="btn btn-sec"
+  onClick={() => corrigirAulas(aluno)}
+>
+  Corrigir aulas
+</button>
+
 
   <button
     className="btn btn-danger"
